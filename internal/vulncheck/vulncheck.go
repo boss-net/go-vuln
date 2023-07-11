@@ -1,28 +1,38 @@
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package vulncheck
+
 import (
 	"fmt"
 	"go/token"
 	"strings"
 	"time"
-	"golang.org/x/tools/go/packages"
+
 	"github.com/boss-net/go-vuln/internal"
 	"github.com/boss-net/go-vuln/internal/osv"
 	"github.com/boss-net/go-vuln/internal/semver"
+	"golang.org/x/tools/go/packages"
 )
+
 // Result contains information on how known vulnerabilities are reachable
 // in the call graph, package imports graph, and module requires graph of
 // the user code.
 type Result struct {
 	// EntryFunctions are a subset of Functions representing vulncheck entry points.
 	EntryFunctions []*FuncNode
+
 	// EntryPackages are a subset of Packages representing packages of vulncheck entry points.
 	EntryPackages []*packages.Package
+
 	// Vulns contains information on detected vulnerabilities and their place in
 	// the above graphs. Only vulnerabilities whose symbols are reachable in Calls,
 	// or whose packages are imported in Imports, or whose modules are required in
 	// Requires, have an entry in Vulns.
 	Vulns []*Vuln
 }
+
 // Vuln provides information on how a vulnerability is affecting user code by
 // connecting it to the Result.{Calls,Imports,Requires} graphs. Vulnerabilities
 // detected in Go binaries do not appear in the Result graphs.
@@ -35,65 +45,83 @@ type Vuln struct {
 	// Note that *osv.Entry may describe multiple symbols from multiple
 	// packages.
 	OSV *osv.Entry
+
 	// Symbol is the name of the detected vulnerable function or method.
 	Symbol string
+
 	// CallSink is the FuncNode in Result.Calls corresponding to Symbol.
 	//
 	// When analyzing binaries, Symbol is not reachable, or cfg.ScanLevel
 	// is symbol, CallSink will be unavailable and set to 0.
 	CallSink *FuncNode
+
 	// ImportSink is the PkgNode in Result.Imports corresponding to PkgPath.
 	//
 	// When analyzing binaries or PkgPath is not imported, ImportSink will be
 	// unavailable and set to 0.
 	ImportSink *packages.Package
 }
+
 // A FuncNode describes a function in the call graph.
 type FuncNode struct {
 	// Name is the name of the function.
 	Name string
+
 	// RecvType is the receiver object type of this function, if any.
 	RecvType string
+
 	// Package is the package the function is part of.
 	Package *packages.Package
+
 	// Position describes the position of the function in the file.
 	Pos *token.Position
+
 	// CallSites is a set of call sites where this function is called.
 	CallSites []*CallSite
 }
+
 func (fn *FuncNode) String() string {
 	if fn.RecvType == "" {
 		return fmt.Sprintf("%s.%s", fn.Package.PkgPath, fn.Name)
 	}
 	return fmt.Sprintf("%s.%s", fn.RecvType, fn.Name)
 }
+
 // Receiver returns the FuncNode's receiver, with package path removed.
 // Pointers are preserved if present.
 func (fn *FuncNode) Receiver() string {
 	return strings.Replace(fn.RecvType, fmt.Sprintf("%s.", fn.Package.PkgPath), "", 1)
 }
+
 // A CallSite describes a function call.
 type CallSite struct {
 	// Parent is the enclosing function where the call is made.
 	Parent *FuncNode
+
 	// Name stands for the name of the function (variable) being called.
 	Name string
+
 	// RecvType is the full path of the receiver object type, if any.
 	RecvType string
+
 	// Position describes the position of the function in the file.
 	Pos *token.Position
+
 	// Resolved indicates if the called function can be statically resolved.
 	Resolved bool
 }
+
 // moduleVulnerabilities is an internal structure for
 // holding and querying vulnerabilities provided by a
 // vulnerability database client.
 type moduleVulnerabilities []*ModVulns
+
 // ModVulns groups vulnerabilities per module.
 type ModVulns struct {
 	Module *packages.Module
 	Vulns  []*osv.Entry
 }
+
 func (mv moduleVulnerabilities) filter(os, arch string) moduleVulnerabilities {
 	now := time.Now()
 	var filteredMod moduleVulnerabilities
@@ -110,6 +138,7 @@ func (mv moduleVulnerabilities) filter(os, arch string) moduleVulnerabilities {
 			if v.Withdrawn != nil && v.Withdrawn.Before(now) {
 				continue
 			}
+
 			var filteredAffected []osv.Affected
 			for _, a := range v.Affected {
 				// Vulnerabilities from some databases might contain
@@ -121,6 +150,7 @@ func (mv moduleVulnerabilities) filter(os, arch string) moduleVulnerabilities {
 				if a.Module.Path != module.Path {
 					continue
 				}
+
 				// A module version is affected if
 				//  - it is included in one of the affected version ranges
 				//  - and module version is not ""
@@ -160,10 +190,12 @@ func (mv moduleVulnerabilities) filter(os, arch string) moduleVulnerabilities {
 	}
 	return filteredMod
 }
+
 func matchesPlatform(os, arch string, e osv.Package) bool {
 	return matchesPlatformComponent(os, e.GOOS) &&
 		matchesPlatformComponent(arch, e.GOARCH)
 }
+
 // matchesPlatformComponent reports whether a GOOS (or GOARCH)
 // matches a list of GOOS (or GOARCH) values from an osv.EcosystemSpecificImport.
 func matchesPlatformComponent(s string, ps []string) bool {
@@ -178,6 +210,7 @@ func matchesPlatformComponent(s string, ps []string) bool {
 	}
 	return false
 }
+
 // vulnsForPackage returns the vulnerabilities for the module which is the most
 // specific prefix of importPath, or nil if there is no matching module with
 // vulnerabilities.
@@ -199,6 +232,7 @@ func (mv moduleVulnerabilities) vulnsForPackage(importPath string) []*osv.Entry 
 	if mostSpecificMod == nil {
 		return nil
 	}
+
 	if mostSpecificMod.Module.Replace != nil {
 		// standard libraries do not have a module nor replace module
 		importPath = fmt.Sprintf("%s%s", mostSpecificMod.Module.Replace.Path, strings.TrimPrefix(importPath, mostSpecificMod.Module.Path))
@@ -218,12 +252,14 @@ Vuln:
 	}
 	return packageVulns
 }
+
 // vulnsForSymbol returns vulnerabilities for `symbol` in `mv.VulnsForPackage(importPath)`.
 func (mv moduleVulnerabilities) vulnsForSymbol(importPath, symbol string) []*osv.Entry {
 	vulns := mv.vulnsForPackage(importPath)
 	if vulns == nil {
 		return nil
 	}
+
 	symbolVulns := []*osv.Entry{}
 vulnLoop:
 	for _, v := range vulns {
@@ -242,6 +278,7 @@ vulnLoop:
 	}
 	return symbolVulns
 }
+
 func contains(symbols []string, target string) bool {
 	for _, s := range symbols {
 		if s == target {
@@ -250,6 +287,7 @@ func contains(symbols []string, target string) bool {
 	}
 	return false
 }
+
 func isStdPackage(pkg string) bool {
 	if pkg == "" {
 		return false

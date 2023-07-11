@@ -1,4 +1,15 @@
+// Copyright 2022 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Only run this on Go 1.18 or higher, because govulncheck can't
+// run on binaries before 1.18.
+
+//go:build go1.18
+// +build go1.18
+
 package main
+
 import (
 	"bytes"
 	"context"
@@ -11,19 +22,23 @@ import (
 	"sync"
 	"testing"
 	"unsafe"
-	"github.com/google/go-cmdtest"
+
 	"github.com/boss-net/go-vuln/internal/govulncheck"
 	"github.com/boss-net/go-vuln/internal/test"
 	"github.com/boss-net/go-vuln/internal/web"
 	"github.com/boss-net/go-vuln/scan"
+	"github.com/google/go-cmdtest"
 )
+
 var update = flag.Bool("update", false, "update test files with results")
+
 type fixup struct {
 	pattern     string
 	compiled    *regexp.Regexp
 	replace     string
 	replaceFunc func(b []byte) []byte
 }
+
 var fixups = []fixup{
 	{
 		// modifies paths to Go files by replacing their directory with "...".
@@ -69,20 +84,24 @@ var fixups = []fixup{
 		replace: `"go_version": "go1.18"`,
 	},
 }
+
 func (f *fixup) init() {
 	f.compiled = regexp.MustCompile(f.pattern)
 }
+
 func (f *fixup) apply(data []byte) []byte {
 	if f.replaceFunc != nil {
 		return f.compiled.ReplaceAllFunc(data, f.replaceFunc)
 	}
 	return f.compiled.ReplaceAll(data, []byte(f.replace))
 }
+
 func init() {
 	for i := range fixups {
 		fixups[i].init()
 	}
 }
+
 func TestCommand(t *testing.T) {
 	testDir, err := os.Getwd()
 	if err != nil {
@@ -96,16 +115,19 @@ func TestCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create make vulndb url: %v", err)
 	}
+
 	moduleDirs, err := filepath.Glob("testdata/modules/*")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	os.Setenv("moddir", filepath.Join(testDir, "testdata", "modules"))
 	for _, md := range moduleDirs {
 		// Skip nogomod module. It has intended build issues.
 		if filepath.Base(md) == "nogomod" {
 			continue
 		}
+
 		// Build test module binary.
 		binary, cleanup := test.GoBuild(t, md, "", filepath.Base(md) == "strip")
 		t.Cleanup(cleanup)
@@ -121,6 +143,7 @@ func TestCommand(t *testing.T) {
 		runTestSuite(t, filepath.Join(testDir, "testdata/strip"), govulndbURI.String(), *update)
 	}
 }
+
 // Limit the number of concurrent scans. Scanning is implemented using
 // x/tools/go/ssa, which is known to be memory-hungry
 // (see https://go.dev/issue/14113), and by default the testing package
@@ -138,6 +161,7 @@ var (
 	parallelLimiter     chan struct{}
 	parallelLimiterInit sync.Once
 )
+
 // testSuite creates a cmdtest suite from dir. It also defines
 // a govulncheck command on the suite that runs govulncheck
 // against vulnerability database available at vulndbDir.
@@ -149,15 +173,19 @@ func runTestSuite(t *testing.T, dir string, govulndb string, update bool) {
 		}
 		parallelLimiter = make(chan struct{}, limit)
 	})
+
 	ts, err := cmdtest.Read(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ts.DisableLogging = true
+
 	ts.Commands["govulncheck"] = func(args []string, inputFile string) ([]byte, error) {
 		parallelLimiter <- struct{}{}
 		defer func() { <-parallelLimiter }()
+
 		newargs := append([]string{"-db", govulndb}, args...)
+
 		buf := &bytes.Buffer{}
 		cmd := scan.Command(context.Background(), newargs...)
 		cmd.Stdout = buf
@@ -212,6 +240,7 @@ func runTestSuite(t *testing.T, dir string, govulndb string, update bool) {
 	}
 	ts.RunParallel(t, false)
 }
+
 func isJSONMode(args []string) bool {
 	for _, arg := range args {
 		if arg == "-json" {

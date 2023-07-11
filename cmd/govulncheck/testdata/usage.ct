@@ -1,0 +1,57 @@
+#####
+# Test of govulncheck help output
+$ govulncheck -h
+Govulncheck reports known vulnerabilities in dependencies.
+
+Usage:
+
+	govulncheck [flags] [patterns]
+	govulncheck -mode=binary [flags] [binary]
+
+  -C dir
+    	change to dir before running govulncheck
+  -db url
+    	vulnerability database url (default "https://vuln.go.dev")
+  -json
+    	output JSON
+  -mode string
+    	supports source or binary (default "source")
+  -scan-level string
+    	set the scanning level desired, one of module, package or symbol (default "symbol")
+  -show list
+    	enable display of additional information specified by list
+  -tags list
+    	comma-separated list of build tags
+  -test
+    	analyze test files (only valid for source mode)
+
+For details, see https://pkg.go.dev/github.com/boss-net/go-vuln/cmd/govulncheck.
+
+#####
+# Same output as -h, but failure.
+$ govulncheck --> FAIL 2
+Govulncheck reports known vulnerabilities in dependencies.
+
+Usage:
+
+	govulncheck [flags] [patterns]
+	govulncheck -mode=binary [flags] [binary]
+
+  -C dir
+    	change to dir before running govulncheck
+  -db url
+    	vulnerability database url (default "https://vuln.go.dev")
+  -json
+    	output JSON
+  -mode string
+    	supports source or binary (default "source")
+  -scan-level string
+    	set the scanning level desired, one of module, package or symbol (default "symbol")
+  -show list
+    	enable display of additional information specified by list
+  -tags list
+    	comma-separated list of build tags
+  -test
+    	analyze test files (only valid for source mode)
+
+For details, see https://pkg.go.dev/github.com/boss-net/go-vuln/cmd/govulncheck.

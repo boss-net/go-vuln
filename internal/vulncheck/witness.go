@@ -1,4 +1,9 @@
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package vulncheck
+
 import (
 	"container/list"
 	"fmt"
@@ -8,20 +13,25 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
 	"golang.org/x/tools/go/packages"
 )
+
 // CallStack is a call stack starting with a client
 // function or method and ending with a call to a
 // vulnerable symbol.
 type CallStack []StackEntry
+
 // StackEntry is an element of a call stack.
 type StackEntry struct {
 	// Function whose frame is on the stack.
 	Function *FuncNode
+
 	// Call is the call site inducing the next stack frame.
 	// nil when the frame represents the last frame in the stack.
 	Call *CallSite
 }
+
 // CallStacks returns representative call stacks for each
 // vulnerability in res. The returned call stacks are heuristically
 // ordered by how seemingly easy is to understand them: shorter
@@ -51,9 +61,11 @@ func CallStacks(res *Result) map[*Vuln]CallStack {
 		}()
 	}
 	wg.Wait()
+
 	updateInitPositions(stackPerVuln)
 	return stackPerVuln
 }
+
 // callStack finds a representative call stack for vuln.
 // This is a shortest unique call stack with the least
 // number of dynamic call sites.
@@ -62,11 +74,14 @@ func callStack(vuln *Vuln, res *Result) CallStack {
 	if vulnSink == nil {
 		return nil
 	}
+
 	entries := make(map[*FuncNode]bool)
 	for _, e := range res.EntryFunctions {
 		entries[e] = true
 	}
+
 	seen := make(map[*FuncNode]bool)
+
 	// Do a BFS from the vuln sink to the entry points
 	// and find the representative call stack. This is
 	// the shortest call stack that goes through the
@@ -77,6 +92,7 @@ func callStack(vuln *Vuln, res *Result) CallStack {
 	candDepth := 0
 	queue := list.New()
 	queue.PushBack(&callChain{f: vulnSink})
+
 	// We want to avoid call stacks that go through
 	// other vulnerable symbols of the same package
 	// for the same vulnerability. In other words,
@@ -88,15 +104,18 @@ func callStack(vuln *Vuln, res *Result) CallStack {
 			skipSymbols[v.CallSink] = true
 		}
 	}
+
 	for queue.Len() > 0 {
 		front := queue.Front()
 		c := front.Value.(*callChain)
 		queue.Remove(front)
+
 		f := c.f
 		if seen[f] {
 			continue
 		}
 		seen[f] = true
+
 		// Pick a single call site for each function in determinstic order.
 		// A single call site is sufficient as we visit a function only once.
 		for _, cs := range callsites(f.CallSites, seen) {
@@ -104,6 +123,7 @@ func callStack(vuln *Vuln, res *Result) CallStack {
 			if !skipSymbols[cs.Parent] {
 				queue.PushBack(nStack)
 			}
+
 			if entries[cs.Parent] {
 				ns := nStack.CallStack()
 				if len(candidates) == 0 || len(ns) == candDepth {
@@ -123,6 +143,7 @@ func callStack(vuln *Vuln, res *Result) CallStack {
 			}
 		}
 	}
+
 	// Sort candidate call stacks by their number of dynamic call
 	// sites and return the first one.
 	sort.SliceStable(candidates, func(i int, j int) bool {
@@ -130,6 +151,7 @@ func callStack(vuln *Vuln, res *Result) CallStack {
 		if w1, w2 := weight(s1), weight(s2); w1 != w2 {
 			return w1 < w2
 		}
+
 		// At this point, the stableness/determinism of
 		// sorting is guaranteed by the determinism of
 		// the underlying call graph and the call stack
@@ -141,6 +163,7 @@ func callStack(vuln *Vuln, res *Result) CallStack {
 	}
 	return candidates[0]
 }
+
 // callsites picks a call site from sites for each non-visited function.
 // For each such function, the smallest (posLess) call site is chosen. The
 // returned slice is sorted by caller functions (funcLess). Assumes callee
@@ -155,23 +178,27 @@ func callsites(sites []*CallSite, visited map[*FuncNode]bool) []*CallSite {
 			minCs[cs.Parent] = cs
 		}
 	}
+
 	var fs []*FuncNode
 	for _, cs := range minCs {
 		fs = append(fs, cs.Parent)
 	}
 	sort.SliceStable(fs, func(i, j int) bool { return funcLess(fs[i], fs[j]) })
+
 	var css []*CallSite
 	for _, f := range fs {
 		css = append(css, minCs[f])
 	}
 	return css
 }
+
 // callChain models a chain of function calls.
 type callChain struct {
 	call  *CallSite // nil for entry points
 	f     *FuncNode
 	child *callChain
 }
+
 // CallStack converts callChain to CallStack type.
 func (c *callChain) CallStack() CallStack {
 	if c == nil {
@@ -179,6 +206,7 @@ func (c *callChain) CallStack() CallStack {
 	}
 	return append(CallStack{StackEntry{Function: c.f, Call: c.call}}, c.child.CallStack()...)
 }
+
 // weight computes an approximate measure of how easy is to understand the call
 // stack when presented to the client as a witness. The smaller the value, the more
 // understandable the stack is. Currently defined as the number of unresolved
@@ -192,12 +220,14 @@ func weight(stack CallStack) int {
 	}
 	return w
 }
+
 // csLess compares two call sites by their locations and, if needed,
 // their string representation.
 func csLess(cs1, cs2 *CallSite) bool {
 	if cs2 == nil {
 		return true
 	}
+
 	// fast code path
 	if p1, p2 := cs1.Pos, cs2.Pos; p1 != nil && p2 != nil {
 		if posLess(*p1, *p2) {
@@ -209,6 +239,7 @@ func csLess(cs1, cs2 *CallSite) bool {
 		// for sanity, should not occur in practice
 		return fmt.Sprintf("%v.%v", cs1.RecvType, cs2.Name) < fmt.Sprintf("%v.%v", cs2.RecvType, cs2.Name)
 	}
+
 	// code path rarely exercised
 	if cs2.Pos == nil {
 		return true
@@ -219,6 +250,7 @@ func csLess(cs1, cs2 *CallSite) bool {
 	// should very rarely occur in practice
 	return fmt.Sprintf("%v.%v", cs1.RecvType, cs2.Name) < fmt.Sprintf("%v.%v", cs2.RecvType, cs2.Name)
 }
+
 // posLess compares two positions by their line and column number,
 // and filename if needed.
 func posLess(p1, p2 token.Position) bool {
@@ -228,14 +260,17 @@ func posLess(p1, p2 token.Position) bool {
 	if p2.Line < p1.Line {
 		return false
 	}
+
 	if p1.Column < p2.Column {
 		return true
 	}
 	if p2.Column < p1.Column {
 		return false
 	}
+
 	return strings.Compare(p1.Filename, p2.Filename) == -1
 }
+
 // funcLess compares two function nodes by locations of
 // corresponding functions and, if needed, their string representation.
 func funcLess(f1, f2 *FuncNode) bool {
@@ -249,6 +284,7 @@ func funcLess(f1, f2 *FuncNode) bool {
 		// for sanity, should not occur in practice
 		return f1.String() < f2.String()
 	}
+
 	if f2.Pos == nil {
 		return true
 	}
@@ -258,6 +294,7 @@ func funcLess(f1, f2 *FuncNode) bool {
 	// should happen only for inits
 	return f1.String() < f2.String()
 }
+
 // updateInitPositions populates non-existing positions of init functions
 // and their respective calls in callStacks (see #51575).
 func updateInitPositions(callStacks map[*Vuln]CallStack) {
@@ -270,6 +307,7 @@ func updateInitPositions(callStacks map[*Vuln]CallStack) {
 		}
 	}
 }
+
 // updateInitCallPosition updates the position of a call to init in a stack frame, if
 // one already does not exist:
 //
@@ -284,6 +322,7 @@ func updateInitCallPosition(curr *StackEntry, next StackEntry) {
 		// Skip non-init functions and inits whose call site position is available.
 		return
 	}
+
 	var pos token.Position
 	if curr.Function.Name == "init" && curr.Function.Package == next.Function.Package {
 		// We have implicit P.init calling P.init#d. Set the call position to
@@ -293,8 +332,10 @@ func updateInitCallPosition(curr *StackEntry, next StackEntry) {
 		// Choose the beginning of the import statement as the position.
 		pos = importStatementPos(curr.Function.Package, next.Function.Package.PkgPath)
 	}
+
 	call.Pos = &pos
 }
+
 func importStatementPos(pkg *packages.Package, importPath string) token.Position {
 	var importSpec *ast.ImportSpec
 spec:
@@ -311,13 +352,16 @@ spec:
 			}
 		}
 	}
+
 	if importSpec == nil {
 		// for sanity, in case of a wild call graph imprecision
 		return token.Position{}
 	}
+
 	// Choose the beginning of the import statement as the position.
 	return pkg.Fset.Position(importSpec.Pos())
 }
+
 func packageStatementPos(pkg *packages.Package) token.Position {
 	if len(pkg.Syntax) == 0 {
 		return token.Position{}
@@ -326,6 +370,7 @@ func packageStatementPos(pkg *packages.Package) token.Position {
 	// the first file since it is as good as any.
 	return pkg.Fset.Position(pkg.Syntax[0].Package)
 }
+
 // updateInitPosition updates the position of P.init function in a stack frame if one
 // is not available. The new position is the position of the "package P" statement.
 func updateInitPosition(se *StackEntry) {
@@ -334,9 +379,11 @@ func updateInitPosition(se *StackEntry) {
 		// Skip non-init functions and inits whose position is available.
 		return
 	}
+
 	pos := packageStatementPos(fun.Package)
 	fun.Pos = &pos
 }
+
 func isInit(f *FuncNode) bool {
 	// A source init function, or anonymous functions used in inits, will
 	// be named "init#x" by vulncheck (more precisely, ssa), where x is a

@@ -1,4 +1,9 @@
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package vulncheck
+
 import (
 	"context"
 	"fmt"
@@ -7,13 +12,15 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"github.com/google/go-cmp/cmp"
-	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/go/packages/packagestest"
+
 	"github.com/boss-net/go-vuln/internal/client"
 	"github.com/boss-net/go-vuln/internal/govulncheck"
 	"github.com/boss-net/go-vuln/internal/osv"
+	"github.com/google/go-cmp/cmp"
+	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/packages/packagestest"
 )
+
 // stacksToString converts map *Vuln:stack to Vuln.Symbol:"f1->...->fN"
 // string representation.
 func stacksToString(stacks map[*Vuln]CallStack) map[string]string {
@@ -27,6 +34,7 @@ func stacksToString(stacks map[*Vuln]CallStack) map[string]string {
 	}
 	return m
 }
+
 func TestCallStacks(t *testing.T) {
 	// Call graph structure for the test program
 	//    entry1      entry2
@@ -43,6 +51,7 @@ func TestCallStacks(t *testing.T) {
 	i2 := &FuncNode{Name: "interm2", CallSites: []*CallSite{{Parent: e2, Resolved: true}, {Parent: i1, Resolved: true}}}
 	v1 := &FuncNode{Name: "vuln1", CallSites: []*CallSite{{Parent: i1, Resolved: true}, {Parent: i2, Resolved: false}}}
 	v2 := &FuncNode{Name: "vuln2", CallSites: []*CallSite{{Parent: i2, Resolved: false}}}
+
 	vp := &packages.Package{PkgPath: "v1", Module: &packages.Module{Path: "m1"}}
 	vuln1 := &Vuln{CallSink: v1, ImportSink: vp, OSV: o, Symbol: "vuln1"}
 	vuln2 := &Vuln{CallSink: v2, ImportSink: vp, OSV: o, Symbol: "vuln2"}
@@ -50,15 +59,18 @@ func TestCallStacks(t *testing.T) {
 		EntryFunctions: []*FuncNode{e1, e2},
 		Vulns:          []*Vuln{vuln1, vuln2},
 	}
+
 	want := map[string]string{
 		"vuln1": "entry1->interm1->vuln1",
 		"vuln2": "entry2->interm2->vuln2",
 	}
+
 	stacks := CallStacks(res)
 	if got := stacksToString(stacks); !reflect.DeepEqual(want, got) {
 		t.Errorf("want %v; got %v", want, got)
 	}
 }
+
 func TestUniqueCallStack(t *testing.T) {
 	// Call graph structure for the test program
 	//    entry1      entry2
@@ -75,6 +87,7 @@ func TestUniqueCallStack(t *testing.T) {
 	i2 := &FuncNode{Name: "interm2", CallSites: []*CallSite{{Parent: i1}}}
 	v1 := &FuncNode{Name: "vuln1", CallSites: []*CallSite{{Parent: e1}}}
 	v2 := &FuncNode{Name: "vuln2", CallSites: []*CallSite{{Parent: v1}, {Parent: i2}}}
+
 	vp := &packages.Package{PkgPath: "v1", Module: &packages.Module{Path: "m1"}}
 	vuln1 := &Vuln{CallSink: v1, ImportSink: vp, OSV: o, Symbol: "vuln1"}
 	vuln2 := &Vuln{CallSink: v2, ImportSink: vp, OSV: o, Symbol: "vuln2"}
@@ -82,15 +95,18 @@ func TestUniqueCallStack(t *testing.T) {
 		EntryFunctions: []*FuncNode{e1, e2},
 		Vulns:          []*Vuln{vuln1, vuln2},
 	}
+
 	want := map[string]string{
 		"vuln1": "entry1->vuln1",
 		"vuln2": "entry2->interm1->interm2->vuln2",
 	}
+
 	stacks := CallStacks(res)
 	if got := stacksToString(stacks); !reflect.DeepEqual(want, got) {
 		t.Errorf("want %v; got %v", want, got)
 	}
 }
+
 // TestInits checks for correct positions of init functions
 // and their respective calls (see #51575).
 func TestInits(t *testing.T) {
@@ -120,6 +136,7 @@ func TestInits(t *testing.T) {
 			Files: map[string]interface{}{
 				"x/x.go": `
 			package x
+
 			import (
 				_ "golang.org/amod/avuln"
 				_ "golang.org/bmod/b"
@@ -131,9 +148,11 @@ func TestInits(t *testing.T) {
 			Name: "golang.org/amod@v0.5.0",
 			Files: map[string]interface{}{"avuln/avuln.go": `
 			package avuln
+
 			func init() {
 				A()
 			}
+
 			func A() {}
 			`},
 		},
@@ -141,6 +160,7 @@ func TestInits(t *testing.T) {
 			Name: "golang.org/bmod@v0.5.0",
 			Files: map[string]interface{}{"b/b.go": `
 			package b
+
 			import _ "golang.org/cmod/cvuln"
 			`},
 		},
@@ -148,7 +168,9 @@ func TestInits(t *testing.T) {
 			Name: "golang.org/cmod@v0.5.0",
 			Files: map[string]interface{}{"cvuln/cvuln.go": `
 			package cvuln
+
 			var x int = C()
+
 			func C() int {
 				return 0
 			}
@@ -156,6 +178,7 @@ func TestInits(t *testing.T) {
 		},
 	})
 	defer e.Cleanup()
+
 	// Load x as entry package.
 	graph := NewPackageGraph("go1.18")
 	pkgs, err := graph.LoadPackages(e.Config, nil, []string{path.Join(e.Temp(), "entry/x")})
@@ -170,6 +193,7 @@ func TestInits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	cs := CallStacks(result)
 	want := map[string][]string{
 		"A": {
@@ -193,6 +217,7 @@ func TestInits(t *testing.T) {
 		t.Errorf("modules mismatch (-want, +got):\n%s", diff)
 	}
 }
+
 // fullStacksToString is like stacksToString but the stack stringification
 // is a slice of strings, each containing detailed information on each on
 // the corresponding frame.
@@ -203,11 +228,13 @@ func fullStacksToString(callStacks map[*Vuln]CallStack) map[string][]string {
 		for _, se := range cs {
 			fPos := se.Function.Pos
 			fp := fmt.Sprintf("%s:%d:%d", filepath.Base(fPos.Filename), fPos.Line, fPos.Column)
+
 			var cp string
 			if se.Call != nil && se.Call.Pos.IsValid() {
 				cPos := se.Call.Pos
 				cp = fmt.Sprintf("%s:%d:%d", filepath.Base(cPos.Filename), cPos.Line, cPos.Column)
 			}
+
 			sse := fmt.Sprintf("N:%s.%s\tF:%v\tC:%v", se.Function.Package.PkgPath, se.Function.Name, fp, cp)
 			scs = append(scs, sse)
 		}

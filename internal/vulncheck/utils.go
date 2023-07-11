@@ -1,25 +1,34 @@
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package vulncheck
+
 import (
 	"bytes"
 	"context"
 	"go/token"
 	"go/types"
 	"strings"
+
+	"github.com/boss-net/go-vuln/internal/osv"
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
 	"golang.org/x/tools/go/callgraph/vta"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa/ssautil"
 	"golang.org/x/tools/go/types/typeutil"
-	"github.com/boss-net/go-vuln/internal/osv"
+
 	"golang.org/x/tools/go/ssa"
 )
+
 // buildSSA creates an ssa representation for pkgs. Returns
 // the ssa program encapsulating the packages and top level
 // ssa packages corresponding to pkgs.
 func buildSSA(pkgs []*packages.Package, fset *token.FileSet) (*ssa.Program, []*ssa.Package) {
 	// TODO(https://go.dev/issue/57221): what about entry functions that are generics?
 	prog := ssa.NewProgram(fset, ssa.InstantiateGenerics)
+
 	imports := make(map[*packages.Package]*ssa.Package)
 	var createImports func(map[string]*packages.Package)
 	createImports = func(pkgs map[string]*packages.Package) {
@@ -31,9 +40,11 @@ func buildSSA(pkgs []*packages.Package, fset *token.FileSet) (*ssa.Program, []*s
 			}
 		}
 	}
+
 	for _, tp := range pkgs {
 		createImports(tp.Imports)
 	}
+
 	var ssaPkgs []*ssa.Package
 	for _, tp := range pkgs {
 		if sp, ok := imports[tp]; ok {
@@ -46,28 +57,34 @@ func buildSSA(pkgs []*packages.Package, fset *token.FileSet) (*ssa.Program, []*s
 	prog.Build()
 	return prog, ssaPkgs
 }
+
 // callGraph builds a call graph of prog based on VTA analysis.
 func callGraph(ctx context.Context, prog *ssa.Program, entries []*ssa.Function) (*callgraph.Graph, error) {
 	entrySlice := make(map[*ssa.Function]bool)
 	for _, e := range entries {
 		entrySlice[e] = true
 	}
+
 	if err := ctx.Err(); err != nil { // cancelled?
 		return nil, err
 	}
 	initial := cha.CallGraph(prog)
 	allFuncs := ssautil.AllFunctions(prog)
+
 	fslice := forwardSlice(entrySlice, initial)
 	// Keep only actually linked functions.
 	pruneSet(fslice, allFuncs)
+
 	if err := ctx.Err(); err != nil { // cancelled?
 		return nil, err
 	}
 	vtaCg := vta.CallGraph(fslice, initial)
+
 	// Repeat the process once more, this time using
 	// the produced VTA call graph as the base graph.
 	fslice = forwardSlice(entrySlice, vtaCg)
 	pruneSet(fslice, allFuncs)
+
 	if err := ctx.Err(); err != nil { // cancelled?
 		return nil, err
 	}
@@ -75,6 +92,7 @@ func callGraph(ctx context.Context, prog *ssa.Program, entries []*ssa.Function) 
 	cg.DeleteSyntheticNodes()
 	return cg, nil
 }
+
 // dbTypeFormat formats the name of t according how types
 // are encoded in vulnerability database:
 //   - pointer designation * is skipped
@@ -89,6 +107,7 @@ func dbTypeFormat(t types.Type) string {
 		return types.TypeString(t, func(p *types.Package) string { return "" })
 	}
 }
+
 // dbFuncName computes a function name consistent with the namings used in vulnerability
 // databases. Effectively, a qualified name of a function local to its enclosing package.
 // If a receiver is a pointer, this information is not encoded in the resulting name. The
@@ -130,11 +149,13 @@ func dbFuncName(f *ssa.Function) string {
 	} else if ttype := selectThunk(f); ttype != nil {
 		qprefix = dbTypeFormat(ttype)
 	}
+
 	if qprefix == "" {
 		return f.Name()
 	}
 	return qprefix + "." + f.Name()
 }
+
 // dbTypesFuncName is dbFuncName defined over *types.Func.
 func dbTypesFuncName(f *types.Func) string {
 	sig := f.Type().(*types.Signature)
@@ -143,6 +164,7 @@ func dbTypesFuncName(f *types.Func) string {
 	}
 	return dbTypeFormat(sig.Recv().Type()) + "." + f.Name()
 }
+
 // memberFuncs returns functions associated with the `member`:
 // 1) `member` itself if `member` is a function
 // 2) `member` methods if `member` is a type
@@ -164,24 +186,28 @@ func memberFuncs(member ssa.Member, prog *ssa.Program) []*ssa.Function {
 		return nil
 	}
 }
+
 // funcPosition gives the position of `f`. Returns empty token.Position
 // if no file information on `f` is available.
 func funcPosition(f *ssa.Function) *token.Position {
 	pos := f.Prog.Fset.Position(f.Pos())
 	return &pos
 }
+
 // instrPosition gives the position of `instr`. Returns empty token.Position
 // if no file information on `instr` is available.
 func instrPosition(instr ssa.Instruction) *token.Position {
 	pos := instr.Parent().Prog.Fset.Position(instr.Pos())
 	return &pos
 }
+
 func resolved(call ssa.CallInstruction) bool {
 	if call == nil {
 		return true
 	}
 	return call.Common().StaticCallee() != nil
 }
+
 func callRecvType(call ssa.CallInstruction) string {
 	if !call.Common().IsInvoke() {
 		return ""
@@ -190,6 +216,7 @@ func callRecvType(call ssa.CallInstruction) string {
 	types.WriteType(buf, call.Common().Value.Type(), nil)
 	return buf.String()
 }
+
 func funcRecvType(f *ssa.Function) string {
 	v := f.Signature.Recv()
 	if v == nil {
@@ -199,6 +226,7 @@ func funcRecvType(f *ssa.Function) string {
 	types.WriteType(buf, v.Type(), nil)
 	return buf.String()
 }
+
 // allSymbols returns all top-level functions and methods defined in pkg.
 func allSymbols(pkg *types.Package) []string {
 	var names []string
@@ -219,6 +247,7 @@ func allSymbols(pkg *types.Package) []string {
 	}
 	return names
 }
+
 // vulnMatchesPackage reports whether an entry applies to pkg (an import path).
 func vulnMatchesPackage(v *osv.Entry, pkg string) bool {
 	for _, a := range v.Affected {

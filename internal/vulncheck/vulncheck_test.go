@@ -1,14 +1,21 @@
+// Copyright 2021 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package vulncheck
+
 import (
 	"path"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/boss-net/go-vuln/internal/osv"
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/packages/packagestest"
-	"github.com/boss-net/go-vuln/internal/osv"
 )
+
 func TestFilterVulns(t *testing.T) {
 	past := time.Now().Add(-3 * time.Hour)
 	mv := moduleVulnerabilities{
@@ -129,6 +136,7 @@ func TestFilterVulns(t *testing.T) {
 			},
 		},
 	}
+
 	expected := moduleVulnerabilities{
 		{
 			Module: &packages.Module{
@@ -196,16 +204,19 @@ func TestFilterVulns(t *testing.T) {
 			},
 		},
 	}
+
 	filtered := mv.filter("linux", "amd64")
 	if diff := diffModuleVulnerabilities(expected, filtered); diff != "" {
 		t.Fatalf("Filter returned unexpected results (-want,+got):\n%s", diff)
 	}
 }
+
 func diffModuleVulnerabilities(a, b moduleVulnerabilities) string {
 	return cmp.Diff(a, b, cmp.Exporter(func(t reflect.Type) bool {
 		return reflect.TypeOf(moduleVulnerabilities{}) == t || reflect.TypeOf(ModVulns{}) == t
 	}))
 }
+
 func TestVulnsForPackage(t *testing.T) {
 	mv := moduleVulnerabilities{
 		{
@@ -257,6 +268,7 @@ func TestVulnsForPackage(t *testing.T) {
 			},
 		},
 	}
+
 	filtered := mv.vulnsForPackage("example.mod/a/b/c")
 	expected := []*osv.Entry{
 		{ID: "b", Affected: []osv.Affected{{
@@ -268,10 +280,12 @@ func TestVulnsForPackage(t *testing.T) {
 			},
 		}}},
 	}
+
 	if !reflect.DeepEqual(filtered, expected) {
 		t.Fatalf("VulnsForPackage returned unexpected results, got:\n%s\nwant:\n%s", vulnsToString(filtered), vulnsToString(expected))
 	}
 }
+
 func TestVulnsForPackageReplaced(t *testing.T) {
 	mv := moduleVulnerabilities{
 		{
@@ -310,6 +324,7 @@ func TestVulnsForPackageReplaced(t *testing.T) {
 			},
 		},
 	}
+
 	filtered := mv.vulnsForPackage("example.mod/a/b/c")
 	expected := []*osv.Entry{
 		{ID: "c", Affected: []osv.Affected{{
@@ -321,10 +336,12 @@ func TestVulnsForPackageReplaced(t *testing.T) {
 			},
 		}}},
 	}
+
 	if !reflect.DeepEqual(filtered, expected) {
 		t.Fatalf("VulnsForPackage returned unexpected results, got:\n%s\nwant:\n%s", vulnsToString(filtered), vulnsToString(expected))
 	}
 }
+
 func TestVulnsForSymbol(t *testing.T) {
 	mv := moduleVulnerabilities{
 		{
@@ -370,6 +387,7 @@ func TestVulnsForSymbol(t *testing.T) {
 			},
 		},
 	}
+
 	filtered := mv.vulnsForSymbol("example.mod/a/b/c", "a")
 	expected := []*osv.Entry{
 		{ID: "b", Affected: []osv.Affected{{
@@ -382,10 +400,12 @@ func TestVulnsForSymbol(t *testing.T) {
 			},
 		}}},
 	}
+
 	if !reflect.DeepEqual(filtered, expected) {
 		t.Fatalf("VulnsForPackage returned unexpected results, got:\n%s\nwant:\n%s", vulnsToString(filtered), vulnsToString(expected))
 	}
 }
+
 func TestConvert(t *testing.T) {
 	e := packagestest.Export(t, packagestest.Modules, []packagestest.Module{
 		{
@@ -393,6 +413,7 @@ func TestConvert(t *testing.T) {
 			Files: map[string]interface{}{
 				"x/x.go": `
 			package x
+
 			import _ "golang.org/amod/avuln"
 		`}},
 		{
@@ -405,6 +426,7 @@ func TestConvert(t *testing.T) {
 			Name: "golang.org/amod@v1.1.3",
 			Files: map[string]interface{}{"avuln/avuln.go": `
 			package avuln
+
 			import _ "golang.org/wmod/w"
 			`},
 		},
@@ -418,16 +440,19 @@ func TestConvert(t *testing.T) {
 			Name: "golang.org/wmod@v0.0.0",
 			Files: map[string]interface{}{"w/w.go": `
 			package w
+
 			import _ "golang.org/bmod/bvuln"
 			`},
 		},
 	})
 	defer e.Cleanup()
+
 	// Load x as entry package.
 	pkgs, err := loadTestPackages(e, path.Join(e.Temp(), "entry/x"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	wantPkgs := map[string][]string{
 		"golang.org/amod/avuln": {"golang.org/wmod/w"},
 		"golang.org/bmod/bvuln": nil,
@@ -437,6 +462,7 @@ func TestConvert(t *testing.T) {
 	if got := pkgPathToImports(pkgs); !reflect.DeepEqual(got, wantPkgs) {
 		t.Errorf("want %v;got %v", wantPkgs, got)
 	}
+
 	wantMods := map[string]string{
 		"golang.org/amod":  "v1.1.3",
 		"golang.org/bmod":  "v0.5.0",
@@ -447,6 +473,7 @@ func TestConvert(t *testing.T) {
 		t.Errorf("want %v;got %v", wantMods, got)
 	}
 }
+
 func TestReceiver(t *testing.T) {
 	tcs := []struct {
 		name string
@@ -486,6 +513,7 @@ func TestReceiver(t *testing.T) {
 			want: "Atype",
 		},
 	}
+
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.fn.Receiver()
